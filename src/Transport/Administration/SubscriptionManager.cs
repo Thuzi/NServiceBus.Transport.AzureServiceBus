@@ -15,27 +15,27 @@
         readonly ServiceBusConnectionStringBuilder connectionStringBuilder;
         readonly ITokenProvider tokenProvider;
         readonly NamespacePermissions namespacePermissions;
-        readonly Func<string, string> ruleShortener;
+        readonly Func<Type, string> ruleNameFactory;
         readonly string subscriptionName;
 
         StartupCheckResult startupCheckResult;
 
-        public SubscriptionManager(string inputQueueName, string topicPath, ServiceBusConnectionStringBuilder connectionStringBuilder, ITokenProvider tokenProvider, NamespacePermissions namespacePermissions, Func<string, string> subscriptionShortener, Func<string, string> ruleShortener)
+        public SubscriptionManager(string inputQueueName, string topicPath, ServiceBusConnectionStringBuilder connectionStringBuilder, ITokenProvider tokenProvider, NamespacePermissions namespacePermissions, Func<string, string> subscriptionFactory, Func<Type, string> ruleNameFactory)
         {
             this.topicPath = topicPath;
             this.connectionStringBuilder = connectionStringBuilder;
             this.tokenProvider = tokenProvider;
             this.namespacePermissions = namespacePermissions;
-            this.ruleShortener = ruleShortener;
+            this.ruleNameFactory = ruleNameFactory;
 
-            subscriptionName = inputQueueName.Length > maxNameLength ? subscriptionShortener(inputQueueName) : inputQueueName;
+            subscriptionName = inputQueueName.Length > maxNameLength ? subscriptionFactory(inputQueueName) : inputQueueName;
         }
 
         public async Task Subscribe(Type eventType, ContextBag context)
         {
             await CheckForManagePermissions().ConfigureAwait(false);
 
-            var ruleName = eventType.FullName.Length > maxNameLength ? ruleShortener(eventType.FullName) : eventType.FullName;
+            var ruleName = ruleNameFactory(eventType);
             var sqlExpression = $"[{Headers.EnclosedMessageTypes}] LIKE '%{eventType.FullName}%'";
             var rule = new RuleDescription(ruleName, new SqlFilter(sqlExpression));
 
@@ -70,7 +70,7 @@
         {
             await CheckForManagePermissions().ConfigureAwait(false);
 
-            var ruleName = eventType.FullName.Length > maxNameLength ? ruleShortener(eventType.FullName) : eventType.FullName;
+            var ruleName = ruleNameFactory(eventType);
 
             var client = new ManagementClient(connectionStringBuilder, tokenProvider);
 

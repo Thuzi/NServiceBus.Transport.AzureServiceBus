@@ -11,6 +11,8 @@
     /// </summary>
     public static class AzureServiceBusTransportSettingsExtensions
     {
+        const int maxNameLength = 50;
+
         /// <summary>
         /// Overrides the default topic name used to publish events between endpoints.
         /// </summary>
@@ -92,28 +94,70 @@
         }
 
         /// <summary>
-        /// Specifies a callback to apply to the subscription name when the endpoint's name is longer than 50 characters.
+        /// Specifies a callback to apply to the subscription name.
         /// </summary>
         /// <param name="transportExtensions"></param>
-        /// <param name="subscriptionNameShortener">The callback to apply.</param>
+        /// <param name="subscriptionNameFactory">The callback to apply.</param>
         /// <returns></returns>
-        public static TransportExtensions<AzureServiceBusTransport> SubscriptionNameShortener(this TransportExtensions<AzureServiceBusTransport> transportExtensions, Func<string, string> subscriptionNameShortener)
+        public static TransportExtensions<AzureServiceBusTransport> SubscriptionNameFactory(this TransportExtensions<AzureServiceBusTransport> transportExtensions, Func<string, string> subscriptionNameFactory)
         {
-            Guard.AgainstNull(nameof(subscriptionNameShortener), subscriptionNameShortener);
+            Guard.AgainstNull(nameof(subscriptionNameFactory), subscriptionNameFactory);
 
-            Func<string, string> wrappedSubscriptionNameShortener = subsciptionName =>
+            Func<string, string> wrappedSubscriptionNameFactory = name =>
             {
                 try
                 {
-                    return subscriptionNameShortener(subsciptionName);
+                    return subscriptionNameFactory(name);
                 }
                 catch (Exception exception)
                 {
-                    throw new Exception("Custom subscription name shortener threw an exception.", exception);
+                    throw new Exception("Custom subscription name factory threw an exception.", exception);
                 }
             };
 
-            transportExtensions.GetSettings().Set(SettingsKeys.SubscriptionNameShortener, wrappedSubscriptionNameShortener);
+            transportExtensions.GetSettings().Set(SettingsKeys.SubscriptionNameFactory, wrappedSubscriptionNameFactory);
+
+            return transportExtensions;
+        }
+
+        /// <summary>
+        /// Specifies a callback to apply to the subscription name when the endpoint's name is longer than 50 characters.
+        /// </summary>
+        /// <param name="transportExtensions"></param>
+        /// <param name="subscriptionNameFactory">The callback to apply.</param>
+        /// <returns></returns>
+        public static TransportExtensions<AzureServiceBusTransport> SubscriptionNameShortener(this TransportExtensions<AzureServiceBusTransport> transportExtensions, Func<string, string> subscriptionNameFactory)
+        {
+            Guard.AgainstNull(nameof(subscriptionNameFactory), subscriptionNameFactory);
+
+            transportExtensions.SubscriptionNameFactory(mainInputQueueName => mainInputQueueName.Length > maxNameLength ? subscriptionNameFactory(mainInputQueueName) : mainInputQueueName);
+
+            return transportExtensions;
+        }
+
+        /// <summary>
+        /// Specifies a callback to apply to a subscription rule name.
+        /// </summary>
+        /// <param name="transportExtensions"></param>
+        /// <param name="ruleNameFactory">The callback to apply.</param>
+        /// <returns></returns>
+        public static TransportExtensions<AzureServiceBusTransport> RuleNameFactory(this TransportExtensions<AzureServiceBusTransport> transportExtensions, Func<Type, string> ruleNameFactory)
+        {
+            Guard.AgainstNull(nameof(ruleNameFactory), ruleNameFactory);
+
+            Func<Type, string> wrappedRuleNameFactory = eventType =>
+            {
+                try
+                {
+                    return ruleNameFactory(eventType);
+                }
+                catch (Exception exception)
+                {
+                    throw new Exception("Custom rule name factory threw an exception.", exception);
+                }
+            };
+
+            transportExtensions.GetSettings().Set(SettingsKeys.RuleNameFactory, wrappedRuleNameFactory);
 
             return transportExtensions;
         }
@@ -128,19 +172,7 @@
         {
             Guard.AgainstNull(nameof(ruleNameShortener), ruleNameShortener);
 
-            Func<string, string> wrappedRuleNameShortener = ruleName =>
-            {
-                try
-                {
-                    return ruleNameShortener(ruleName);
-                }
-                catch (Exception exception)
-                {
-                    throw new Exception("Custom rule name shortener threw an exception.", exception);
-                }
-            };
-
-            transportExtensions.GetSettings().Set(SettingsKeys.RuleNameShortener, wrappedRuleNameShortener);
+            transportExtensions.RuleNameFactory(eventType => eventType.FullName.Length > maxNameLength ? ruleNameShortener(eventType.FullName) : eventType.FullName);
 
             return transportExtensions;
         }
