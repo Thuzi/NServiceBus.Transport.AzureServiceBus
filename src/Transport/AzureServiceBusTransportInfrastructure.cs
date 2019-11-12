@@ -16,7 +16,7 @@
     class AzureServiceBusTransportInfrastructure : TransportInfrastructure
     {
         const string defaultTopicName = "bundle-1";
-        static readonly Func<Type, string> defaultRuleNameFactory = eventType => eventType.FullName;
+        static readonly Func<Type, string> defaultRuleNameFactory = eventType => eventType.FullName, defaultSqlExpressionFactory = eventType => $"[{Headers.EnclosedMessageTypes}] LIKE '%{eventType.FullName}%'";
         static readonly Func<string, string> defaultSubscriptionNameFactory = mainInputQueueName => mainInputQueueName;
 
         readonly SettingsHolder settings;
@@ -152,7 +152,12 @@
                 ruleNameFactory = defaultRuleNameFactory;
             }
 
-            return new SubscriptionManager(settings.LocalAddress(), topicName, connectionStringBuilder, tokenProvider, namespacePermissions, subscriptionNameFactory, ruleNameFactory);
+            if (!settings.TryGet(SettingsKeys.SqlExpressionFactory, out Func<Type, string> sqlExpressionFactory))
+            {
+                sqlExpressionFactory = defaultSqlExpressionFactory;
+            }
+
+            return new SubscriptionManager(settings.LocalAddress(), topicName, connectionStringBuilder, tokenProvider, namespacePermissions, subscriptionNameFactory, ruleNameFactory, sqlExpressionFactory);
         }
 
         public override EndpointInstance BindToLocalEndpoint(EndpointInstance instance) => instance;

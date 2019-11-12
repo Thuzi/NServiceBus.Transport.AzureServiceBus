@@ -16,17 +16,19 @@
         readonly ITokenProvider tokenProvider;
         readonly NamespacePermissions namespacePermissions;
         readonly Func<Type, string> ruleNameFactory;
+        readonly Func<Type, string> sqlExpressionFactory;
         readonly string subscriptionName;
 
         StartupCheckResult startupCheckResult;
 
-        public SubscriptionManager(string inputQueueName, string topicPath, ServiceBusConnectionStringBuilder connectionStringBuilder, ITokenProvider tokenProvider, NamespacePermissions namespacePermissions, Func<string, string> subscriptionFactory, Func<Type, string> ruleNameFactory)
+        public SubscriptionManager(string inputQueueName, string topicPath, ServiceBusConnectionStringBuilder connectionStringBuilder, ITokenProvider tokenProvider, NamespacePermissions namespacePermissions, Func<string, string> subscriptionFactory, Func<Type, string> ruleNameFactory, Func<Type, string> sqlExpressionFactory)
         {
             this.topicPath = topicPath;
             this.connectionStringBuilder = connectionStringBuilder;
             this.tokenProvider = tokenProvider;
             this.namespacePermissions = namespacePermissions;
             this.ruleNameFactory = ruleNameFactory;
+            this.sqlExpressionFactory = sqlExpressionFactory;
 
             subscriptionName = inputQueueName.Length > maxNameLength ? subscriptionFactory(inputQueueName) : inputQueueName;
         }
@@ -36,7 +38,7 @@
             await CheckForManagePermissions().ConfigureAwait(false);
 
             var ruleName = ruleNameFactory(eventType);
-            var sqlExpression = $"[{Headers.EnclosedMessageTypes}] LIKE '%{eventType.FullName}%'";
+            var sqlExpression = sqlExpressionFactory(eventType);
             var rule = new RuleDescription(ruleName, new SqlFilter(sqlExpression));
 
             var client = new ManagementClient(connectionStringBuilder, tokenProvider);

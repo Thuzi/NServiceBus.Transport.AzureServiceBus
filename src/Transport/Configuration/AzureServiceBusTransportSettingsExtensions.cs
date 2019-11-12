@@ -178,6 +178,33 @@
         }
 
         /// <summary>
+        /// Specifies a callback to apply to a subscription rule SQL expression.
+        /// </summary>
+        /// <param name="transportExtensions"></param>
+        /// <param name="sqlExpressionFactory">The callback to apply.</param>
+        /// <returns></returns>
+        public static TransportExtensions<AzureServiceBusTransport> RuleSqlExpressionFactory(this TransportExtensions<AzureServiceBusTransport> transportExtensions, Func<Type, string> sqlExpressionFactory)
+        {
+            Guard.AgainstNull(nameof(sqlExpressionFactory), sqlExpressionFactory);
+
+            Func<Type, string> wrappedSqlExpressionFactory = eventType =>
+            {
+                try
+                {
+                    return sqlExpressionFactory(eventType);
+                }
+                catch (Exception exception)
+                {
+                    throw new Exception("Custom rule SQL expression factory threw an exception.", exception);
+                }
+            };
+
+            transportExtensions.GetSettings().Set(SettingsKeys.SqlExpressionFactory, wrappedSqlExpressionFactory);
+
+            return transportExtensions;
+        }
+
+        /// <summary>
         /// Configures the transport to use AMQP over WebSockets.
         /// </summary>
         /// <param name="transportExtensions"></param>
