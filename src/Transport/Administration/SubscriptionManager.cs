@@ -9,8 +9,6 @@
 
     class SubscriptionManager : IManageSubscriptions
     {
-        const int maxNameLength = 50;
-
         readonly string topicPath;
         readonly ServiceBusConnectionStringBuilder connectionStringBuilder;
         readonly ITokenProvider tokenProvider;
@@ -30,7 +28,7 @@
             this.ruleNameFactory = ruleNameFactory;
             this.sqlExpressionFactory = sqlExpressionFactory;
 
-            subscriptionName = inputQueueName.Length > maxNameLength ? subscriptionFactory(inputQueueName) : inputQueueName;
+            subscriptionName = subscriptionFactory(inputQueueName);
         }
 
         public async Task Subscribe(Type eventType, ContextBag context)
