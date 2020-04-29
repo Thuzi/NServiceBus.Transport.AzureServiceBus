@@ -1,15 +1,15 @@
 ﻿namespace NServiceBus.Transport.AzureServiceBus
 {
-    using System;
-    using System.Collections.Generic;
-    using System.Threading;
-    using System.Threading.Tasks;
-    using System.Transactions;
     using Extensibility;
     using Logging;
     using Microsoft.Azure.ServiceBus;
     using Microsoft.Azure.ServiceBus.Core;
     using Microsoft.Azure.ServiceBus.Primitives;
+    using System;
+    using System.Collections.Generic;
+    using System.Threading;
+    using System.Threading.Tasks;
+    using System.Transactions;
 
     class MessagePump : IPushMessages
     {
@@ -19,6 +19,7 @@
         readonly TimeSpan timeToWaitBeforeTriggeringCircuitBreaker;
         readonly ITokenProvider tokenProvider;
         int numberOfExecutingReceives;
+        readonly Func<MessageContext, Func<MessageContext, Task>, Task> messageReceivedMiddleware;
 
         // Init
         Func<MessageContext, Task> onMessage;
@@ -36,13 +37,14 @@
 
         static readonly ILog logger = LogManager.GetLogger<MessagePump>();
 
-        public MessagePump(ServiceBusConnectionStringBuilder connectionStringBuilder, ITokenProvider tokenProvider, int prefetchMultiplier, int? overriddenPrefetchCount, TimeSpan timeToWaitBeforeTriggeringCircuitBreaker)
+        public MessagePump(ServiceBusConnectionStringBuilder connectionStringBuilder, ITokenProvider tokenProvider, int prefetchMultiplier, int? overriddenPrefetchCount, TimeSpan timeToWaitBeforeTriggeringCircuitBreaker, Func<MessageContext, Func<MessageContext, Task>, Task> messageReceivedMiddleware)
         {
             this.connectionStringBuilder = connectionStringBuilder;
             this.tokenProvider = tokenProvider;
             this.prefetchMultiplier = prefetchMultiplier;
             this.overriddenPrefetchCount = overriddenPrefetchCount;
             this.timeToWaitBeforeTriggeringCircuitBreaker = timeToWaitBeforeTriggeringCircuitBreaker;
+            this.messageReceivedMiddleware = messageReceivedMiddleware;
         }
 
         public Task Init(Func<MessageContext, Task> onMessage, Func<ErrorContext, Task<ErrorHandleResult>> onError, CriticalError criticalError, PushSettings settings)
@@ -52,7 +54,7 @@
                 throw new Exception("Azure Service Bus transport doesn't support PurgeOnStartup behavior");
             }
 
-            this.onMessage = onMessage;
+            this.onMessage = messageReceivedMiddleware == null ? onMessage : messageContext => messageReceivedMiddleware(messageContext, onMessage);
             this.onError = onError;
             this.criticalError = criticalError;
             pushSettings = settings;

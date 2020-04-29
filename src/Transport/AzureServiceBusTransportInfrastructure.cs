@@ -1,9 +1,5 @@
 ﻿namespace NServiceBus.Transport.AzureServiceBus
 {
-    using System;
-    using System.Collections.Generic;
-    using System.Text;
-    using System.Threading.Tasks;
     using DelayedDelivery;
     using Features;
     using Microsoft.Azure.ServiceBus;
@@ -11,6 +7,10 @@
     using Performance.TimeToBeReceived;
     using Routing;
     using Settings;
+    using System;
+    using System.Collections.Generic;
+    using System.Text;
+    using System.Threading.Tasks;
     using Transport;
 
     class AzureServiceBusTransportInfrastructure : TransportInfrastructure
@@ -89,7 +89,9 @@
                 timeToWaitBeforeTriggeringCircuitBreaker = TimeSpan.FromMinutes(2);
             }
 
-            return new MessagePump(connectionStringBuilder, tokenProvider, prefetchMultiplier, prefetchCount, timeToWaitBeforeTriggeringCircuitBreaker);
+            settings.TryGet(SettingsKeys.MessageReceivedMiddleware, out Func<MessageContext, Func<MessageContext, Task>, Task> messageReceivedMiddleware);
+
+            return new MessagePump(connectionStringBuilder, tokenProvider, prefetchMultiplier, prefetchCount, timeToWaitBeforeTriggeringCircuitBreaker, messageReceivedMiddleware);
         }
 
         QueueCreator CreateQueueCreator()

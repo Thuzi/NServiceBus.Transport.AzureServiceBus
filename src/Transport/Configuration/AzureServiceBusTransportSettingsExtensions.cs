@@ -1,9 +1,11 @@
 ﻿namespace NServiceBus
 {
-    using System;
     using Configuration.AdvancedExtensibility;
     using Microsoft.Azure.ServiceBus;
     using Microsoft.Azure.ServiceBus.Primitives;
+    using System;
+    using System.Threading.Tasks;
+    using Transport;
     using Transport.AzureServiceBus;
 
     /// <summary>
@@ -12,6 +14,24 @@
     public static class AzureServiceBusTransportSettingsExtensions
     {
         const int maxNameLength = 50;
+
+        /// <summary>
+        /// Sets the message received middleware
+        /// </summary>
+        public static TransportExtensions<AzureServiceBusTransport> OnMessageMiddleware(this TransportExtensions<AzureServiceBusTransport> transportExtensions, Func<MessageContext, Func<MessageContext, Task>, Task> messageReceivedMiddleware)
+        {
+            Guard.AgainstNull(nameof(messageReceivedMiddleware), messageReceivedMiddleware);
+
+            if (transportExtensions.GetSettings().HasExplicitValue(SettingsKeys.MessageReceivedMiddleware))
+            {
+                throw new InvalidOperationException("MessageReceivedMiddleware is already defined");
+            }
+
+            transportExtensions.GetSettings().Set(SettingsKeys.MessageReceivedMiddleware, messageReceivedMiddleware);
+
+            return transportExtensions;
+        }
+
 
         /// <summary>
         /// Overrides the default topic name used to publish events between endpoints.
