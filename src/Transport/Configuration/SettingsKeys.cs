@@ -14,5 +14,6 @@
         public const string RuleNameFactory = Base + nameof(RuleNameFactory);
         public const string TransportType = Base + nameof(TransportType);
         public const string CustomTokenProvider = Base + nameof(CustomTokenProvider);
+        public const string MessageReceivedMiddleware = Base + nameof(MessageReceivedMiddleware);
     }
 }
