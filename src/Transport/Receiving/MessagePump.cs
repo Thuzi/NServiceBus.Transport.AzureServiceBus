@@ -17,6 +17,7 @@
         readonly int prefetchMultiplier;
         readonly int? overriddenPrefetchCount;
         readonly TimeSpan timeToWaitBeforeTriggeringCircuitBreaker;
+        readonly RetryPolicy retryPolicy;
         readonly ITokenProvider tokenProvider;
         int numberOfExecutingReceives;
         readonly Func<MessageContext, Func<MessageContext, Task>, Task> messageReceivedMiddleware;
@@ -37,7 +38,7 @@
 
         static readonly ILog logger = LogManager.GetLogger<MessagePump>();
 
-        public MessagePump(ServiceBusConnectionStringBuilder connectionStringBuilder, ITokenProvider tokenProvider, int prefetchMultiplier, int? overriddenPrefetchCount, TimeSpan timeToWaitBeforeTriggeringCircuitBreaker, Func<MessageContext, Func<MessageContext, Task>, Task> messageReceivedMiddleware)
+        public MessagePump(ServiceBusConnectionStringBuilder connectionStringBuilder, ITokenProvider tokenProvider, int prefetchMultiplier, int? overriddenPrefetchCount, TimeSpan timeToWaitBeforeTriggeringCircuitBreaker, Func<MessageContext, Func<MessageContext, Task>, Task> messageReceivedMiddleware, RetryPolicy retryPolicy)
         {
             this.connectionStringBuilder = connectionStringBuilder;
             this.tokenProvider = tokenProvider;
@@ -45,6 +46,7 @@
             this.overriddenPrefetchCount = overriddenPrefetchCount;
             this.timeToWaitBeforeTriggeringCircuitBreaker = timeToWaitBeforeTriggeringCircuitBreaker;
             this.messageReceivedMiddleware = messageReceivedMiddleware;
+            this.retryPolicy = retryPolicy;
         }
 
         public Task Init(Func<MessageContext, Task> onMessage, Func<ErrorContext, Task<ErrorHandleResult>> onError, CriticalError criticalError, PushSettings settings)
@@ -79,11 +81,11 @@
 
             if (tokenProvider == null)
             {
-                receiver = new MessageReceiver(connectionStringBuilder.GetNamespaceConnectionString(), pushSettings.InputQueue, receiveMode, retryPolicy: default, prefetchCount);
+                receiver = new MessageReceiver(connectionStringBuilder.GetNamespaceConnectionString(), pushSettings.InputQueue, receiveMode, retryPolicy: retryPolicy, prefetchCount);
             }
             else
             {
-                receiver = new MessageReceiver(connectionStringBuilder.Endpoint, pushSettings.InputQueue, tokenProvider, connectionStringBuilder.TransportType, receiveMode, retryPolicy: default, prefetchCount);
+                receiver = new MessageReceiver(connectionStringBuilder.Endpoint, pushSettings.InputQueue, tokenProvider, connectionStringBuilder.TransportType, receiveMode, retryPolicy: retryPolicy, prefetchCount);
             }
 
             semaphore = new SemaphoreSlim(maxConcurrency, maxConcurrency);
@@ -103,23 +105,7 @@
 
                     var receiveTask = receiver.ReceiveAsync();
 
-                    ProcessMessage(receiveTask)
-                        .ContinueWith((t, s) =>
-                        {
-                            try
-                            {
-                                ((SemaphoreSlim)s).Release();
-                            }
-                            catch (ObjectDisposedException)
-                            {
-                                // Can happen during endpoint shutdown
-                            }
-
-                            if (t.Exception != null)
-                            {
-                                logger.Debug($"Exception from {nameof(ProcessMessage)}: ", t.Exception.Flatten());
-                            }
-                        }, semaphore, TaskContinuationOptions.ExecuteSynchronously).Ignore();
+                    ProcessMessage(receiveTask).Ignore();
                 }
             }
             catch (OperationCanceledException)
@@ -128,6 +114,29 @@
         }
 
         async Task ProcessMessage(Task<Message> receiveTask)
+        {
+            try
+            {
+                await InnerProcessMessage(receiveTask).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                logger.Debug($"Exception from {nameof(ProcessMessage)}: ", ex);
+            }
+            finally
+            {
+                try
+                {
+                    semaphore.Release();
+                }
+                catch (ObjectDisposedException)
+                {
+                    // Can happen during endpoint shutdown
+                }
+            }
+        }
+
+        async Task InnerProcessMessage(Task<Message> receiveTask)
         {
             Message message = null;
 
@@ -198,7 +207,10 @@
                 {
                     var transportTransaction = CreateTransportTransaction(message.PartitionKey);
 
-                    var messageContext = new MessageContext(messageId, headers, body, transportTransaction, receiveCancellationTokenSource, new ContextBag());
+                    var contextBag = new ContextBag();
+                    contextBag.Set(message);
+
+                    var messageContext = new MessageContext(messageId, headers, body, transportTransaction, receiveCancellationTokenSource, contextBag);
 
                     using (var scope = CreateTransactionScope())
                     {

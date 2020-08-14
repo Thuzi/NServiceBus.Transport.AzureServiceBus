@@ -43,39 +43,18 @@
 
             var client = new ManagementClient(connectionStringBuilder, tokenProvider);
 
-            var topic = new TopicDescription(topicName)
-            {
-                EnableBatchedOperations = true,
-                EnablePartitioning = enablePartitioning,
-                MaxSizeInMB = maxSizeInMB
-            };
-
             try
             {
-                await client.CreateTopicAsync(topic).ConfigureAwait(false);
-            }
-            catch (MessagingEntityAlreadyExistsException)
-            {
-            }
-            // TODO: refactor when https://github.com/Azure/azure-service-bus-dotnet/issues/525 is fixed
-            catch (ServiceBusException sbe) when (sbe.Message.Contains("SubCode=40901.")) // An operation is in progress.
-            {
-            }
-
-            foreach (var address in queueBindings.ReceivingAddresses.Concat(queueBindings.SendingAddresses))
-            {
-                var queue = new QueueDescription(address)
+                var topic = new TopicDescription(topicName)
                 {
                     EnableBatchedOperations = true,
-                    LockDuration = TimeSpan.FromMinutes(5),
-                    MaxDeliveryCount = int.MaxValue,
-                    MaxSizeInMB = maxSizeInMB,
-                    EnablePartitioning = enablePartitioning
+                    EnablePartitioning = enablePartitioning,
+                    MaxSizeInMB = maxSizeInMB
                 };
 
                 try
                 {
-                    await client.CreateQueueAsync(queue).ConfigureAwait(false);
+                    await client.CreateTopicAsync(topic).ConfigureAwait(false);
                 }
                 catch (MessagingEntityAlreadyExistsException)
                 {
@@ -84,7 +63,30 @@
                 catch (ServiceBusException sbe) when (sbe.Message.Contains("SubCode=40901.")) // An operation is in progress.
                 {
                 }
-            }
+
+                foreach (var address in queueBindings.ReceivingAddresses.Concat(queueBindings.SendingAddresses))
+                {
+                    var queue = new QueueDescription(address)
+                    {
+                        EnableBatchedOperations = true,
+                        LockDuration = TimeSpan.FromMinutes(5),
+                        MaxDeliveryCount = int.MaxValue,
+                        MaxSizeInMB = maxSizeInMB,
+                        EnablePartitioning = enablePartitioning
+                    };
+
+                    try
+                    {
+                        await client.CreateQueueAsync(queue).ConfigureAwait(false);
+                    }
+                    catch (MessagingEntityAlreadyExistsException)
+                    {
+                    }
+                    // TODO: refactor when https://github.com/Azure/azure-service-bus-dotnet/issues/525 is fixed
+                    catch (ServiceBusException sbe) when (sbe.Message.Contains("SubCode=40901.")) // An operation is in progress.
+                    {
+                    }
+                }
 
             var subscriptionName = subscriptionFactory(mainInputQueueName);
             var subscription = new SubscriptionDescription(topicName, subscriptionName)
@@ -97,19 +99,22 @@
                 UserMetadata = mainInputQueueName
             };
 
-            try
-            {
-                await client.CreateSubscriptionAsync(subscription, new RuleDescription("$default", new FalseFilter())).ConfigureAwait(false);
+                try
+                {
+                    await client.CreateSubscriptionAsync(subscription, new RuleDescription("$default", new FalseFilter())).ConfigureAwait(false);
+                }
+                catch (MessagingEntityAlreadyExistsException)
+                {
+                }
+                // TODO: refactor when https://github.com/Azure/azure-service-bus-dotnet/issues/525 is fixed
+                catch (ServiceBusException sbe) when (sbe.Message.Contains("SubCode=40901.")) // An operation is in progress.
+                {
+                }
             }
-            catch (MessagingEntityAlreadyExistsException)
+            finally
             {
+                await client.CloseAsync().ConfigureAwait(false);
             }
-            // TODO: refactor when https://github.com/Azure/azure-service-bus-dotnet/issues/525 is fixed
-            catch (ServiceBusException sbe) when (sbe.Message.Contains("SubCode=40901.")) // An operation is in progress.
-            {
-            }
-
-            await client.CloseAsync().ConfigureAwait(false);
         }
     }
 }

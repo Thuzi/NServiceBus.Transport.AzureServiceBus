@@ -9,10 +9,11 @@
 
     class MessageSenderPool
     {
-        public MessageSenderPool(ServiceBusConnectionStringBuilder connectionStringBuilder, ITokenProvider tokenProvider)
+        public MessageSenderPool(ServiceBusConnectionStringBuilder connectionStringBuilder, ITokenProvider tokenProvider, RetryPolicy retryPolicy)
         {
             this.connectionStringBuilder = connectionStringBuilder;
             this.tokenProvider = tokenProvider;
+            this.retryPolicy = retryPolicy;
 
             senders = new ConcurrentDictionary<(string, (ServiceBusConnection, string)), ConcurrentQueue<MessageSender>>();
         }
@@ -26,17 +27,17 @@
                 // Send-Via case
                 if (receiverConnectionAndPath != (null, null))
                 {
-                    sender = new MessageSender(receiverConnectionAndPath.connection, destination, receiverConnectionAndPath.path);
+                    sender = new MessageSender(receiverConnectionAndPath.connection, destination, receiverConnectionAndPath.path, retryPolicy);
                 }
                 else
                 {
                     if (tokenProvider == null)
                     {
-                        sender = new MessageSender(connectionStringBuilder.GetNamespaceConnectionString(), destination);
+                        sender = new MessageSender(connectionStringBuilder.GetNamespaceConnectionString(), destination, retryPolicy);
                     }
                     else
                     {
-                        sender = new MessageSender(connectionStringBuilder.Endpoint, destination, tokenProvider, connectionStringBuilder.TransportType);
+                        sender = new MessageSender(connectionStringBuilder.Endpoint, destination, tokenProvider, connectionStringBuilder.TransportType, retryPolicy);
                     }
                 }
             }
@@ -52,17 +53,9 @@
             }
 
             var connectionToUse = sender.OwnsConnection ? null : sender.ServiceBusConnection;
+            var path = sender.OwnsConnection ? sender.Path : sender.TransferDestinationPath;
 
-            // TODO: remove workaround for ASB client bug when https://github.com/Azure/azure-service-bus-dotnet/issues/569 is fixed
-            var path = sender.Path;
-            var transferDestinationPath = sender.TransferDestinationPath;
-            if (!sender.OwnsConnection)
-            {
-                path = sender.TransferDestinationPath;
-                transferDestinationPath = sender.Path;
-            }
-
-            if (senders.TryGetValue((/*sender.Path*/path, (connectionToUse, /*sender.TransferDestinationPath*/transferDestinationPath)), out var sendersForDestination))
+            if (senders.TryGetValue((path, (connectionToUse, sender.ViaEntityPath)), out var sendersForDestination))
             {
                 sendersForDestination.Enqueue(sender);
             }
@@ -87,6 +80,7 @@
 
         readonly ServiceBusConnectionStringBuilder connectionStringBuilder;
         readonly ITokenProvider tokenProvider;
+        readonly RetryPolicy retryPolicy;
 
         ConcurrentDictionary<(string destination, (ServiceBusConnection connnection, string incomingQueue)), ConcurrentQueue<MessageSender>> senders;
     }
